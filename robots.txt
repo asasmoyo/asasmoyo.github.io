@@ -1,3 +1,3 @@
 User-agent: *
 
-Sitemap: https://asasmoyo.github.com/sitemap.xml
+Sitemap: https://asasmoyo.github.io/sitemap.xml
