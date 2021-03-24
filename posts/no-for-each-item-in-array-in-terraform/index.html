@@ -1,0 +1,85 @@
+<!doctype html><html lang=en-us><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta http-equiv=x-ua-compatible content="IE=edge"><meta name=theme-color content="dark"><title>No `for_each` Item in Array in Terraform | relax, you're probably doing fine</title><link rel=stylesheet href=/sass/main.min.4e90cee935c47394b47f9cb7ffe8e3ffab18b88d82fea203918cc3f92eec5eb2.css></head><body class=dark><nav class=navbar><div class=container><div class=flex><div><a class=brand href=/>relax, you're probably doing fine</a></div><div class=flex><a href=/articles/>Articles</a>
+<a href=/tags/>Tags</a>
+<button id=dark-mode-button></button></div></div></div></nav><main><div class=container><article><header class=article-header><div class=thumb><div><h1>No `for_each` Item in Array in Terraform</h1><div class=post-meta><div>By on <time>March 28, 2020</time></div><div class=tags><a href=/tags/terraform/>terraform</a>
+<a href=/tags/til/>til</a></div></div></div></div></header></article><div class=article-post><p>I was importing my team&rsquo;s PagerDuty setup into Terraform today. There are 6 people in PagerDuty users so I thought, I would create locals block with users as array of map containing each name and email. Then I&rsquo;d feed <code>local.users</code> into <code>pagerduty_user</code> resource using <code>for_each</code>.</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt> 1
+</span><span class=lnt> 2
+</span><span class=lnt> 3
+</span><span class=lnt> 4
+</span><span class=lnt> 5
+</span><span class=lnt> 6
+</span><span class=lnt> 7
+</span><span class=lnt> 8
+</span><span class=lnt> 9
+</span><span class=lnt>10
+</span><span class=lnt>11
+</span><span class=lnt>12
+</span><span class=lnt>13
+</span><span class=lnt>14
+</span><span class=lnt>15
+</span><span class=lnt>16
+</span><span class=lnt>17
+</span><span class=lnt>18
+</span><span class=lnt>19
+</span><span class=lnt>20
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-hcl data-lang=hcl><span class=k>locals</span> {
+<span class=n>    users</span> <span class=o>=</span> <span class=p>[</span>
+        {
+<span class=n>            name</span> <span class=o>=</span> <span class=s2>&#34;John Doe&#34;</span>
+<span class=n>            email</span> <span class=o>=</span> <span class=s2>&#34;john@company.com&#34;</span>
+        }<span class=p>,</span>
+        {
+<span class=n>            name</span> <span class=o>=</span> <span class=s2>&#34;Somebody&#34;</span>
+<span class=n>            email</span> <span class=o>=</span> <span class=s2>&#34;somebody@company.com&#34;</span>
+        }<span class=p>,</span>
+        <span class=err>//</span> <span class=p>...</span>
+    <span class=p>]</span>
+}
+
+<span class=k>resource</span> <span class=s2>&#34;pagerduty_user&#34; &#34;users&#34;</span> {
+<span class=n>    for_each</span> <span class=o>=</span> <span class=k>local</span><span class=p>.</span><span class=k>users</span>
+
+<span class=n>    name</span> <span class=o>=</span> <span class=k>each</span><span class=p>.</span><span class=k>value</span><span class=p>.</span><span class=k>name</span>
+<span class=n>    email</span> <span class=o>=</span> <span class=k>each</span><span class=p>.</span><span class=k>value</span><span class=p>.</span><span class=k>email</span>
+}
+</code></pre></td></tr></table></div></div><p>It turned out, <code>for_each</code> doesn&rsquo;t accept array, it only accepts map or set. So above code didn&rsquo;t work but it has to be like bellow:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt> 1
+</span><span class=lnt> 2
+</span><span class=lnt> 3
+</span><span class=lnt> 4
+</span><span class=lnt> 5
+</span><span class=lnt> 6
+</span><span class=lnt> 7
+</span><span class=lnt> 8
+</span><span class=lnt> 9
+</span><span class=lnt>10
+</span><span class=lnt>11
+</span><span class=lnt>12
+</span><span class=lnt>13
+</span><span class=lnt>14
+</span><span class=lnt>15
+</span><span class=lnt>16
+</span><span class=lnt>17
+</span><span class=lnt>18
+</span><span class=lnt>19
+</span><span class=lnt>20
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-hcl data-lang=hcl><span class=k>locals</span> {
+<span class=n>    users</span> <span class=o>=</span> <span class=p>[</span>
+<span class=n>        john</span> <span class=o>=</span> {
+<span class=n>            name</span> <span class=o>=</span> <span class=s2>&#34;John Doe&#34;</span>
+<span class=n>            email</span> <span class=o>=</span> <span class=s2>&#34;john@company.com&#34;</span>
+        }<span class=p>,</span>
+<span class=n>        somebody</span> <span class=o>=</span> {
+<span class=n>            name</span> <span class=o>=</span> <span class=s2>&#34;Somebody&#34;</span>
+<span class=n>            email</span> <span class=o>=</span> <span class=s2>&#34;somebody@company.com&#34;</span>
+        }<span class=p>,</span>
+        <span class=err>//</span> <span class=p>...</span>
+    <span class=p>]</span>
+}
+
+<span class=k>resource</span> <span class=s2>&#34;pagerduty_user&#34; &#34;users&#34;</span> {
+<span class=n>    for_each</span> <span class=o>=</span> <span class=k>local</span><span class=p>.</span><span class=k>users</span>
+
+<span class=n>    name</span> <span class=o>=</span> <span class=k>each</span><span class=p>.</span><span class=k>value</span><span class=p>.</span><span class=k>name</span>
+<span class=n>    email</span> <span class=o>=</span> <span class=k>each</span><span class=p>.</span><span class=k>value</span><span class=p>.</span><span class=k>email</span>
+}
+</code></pre></td></tr></table></div></div><p>But why wouldn&rsquo;t it accept array? If I think about it again, it&rsquo;s for a good reason. Let me explain.</p><p>Suppose <code>for_each</code> works with array, what would happen if at some point in the future, you remove one item in the middle of the array? Your resources from that removed index until the end will be shifted forward and neds to be recreated by Terraform. Don&rsquo;t forget that Terraform use index for array resources. So for <code>pagerduty_user</code> resource, there will be <code>pagerduty_user[0]</code>, <code>pagerduty_user[1]</code>, <code>pagerduty_user[2]</code> and soon.</p><p>It may be fine for resources like <code>pagerduty_user</code>, but what would happen if you used on machines with your database in it? And with no backup configured. Yes that could be disaster.</p></div></div><div class=container><nav class="flex container suggested"><a rel=prev href=/posts/konfigurasi-replikasi-di-postgresql-11/ title="Previous post (older)"><span>Previous</span>
+Konfigurasi Replikasi di PostgreSQL 11</a></nav></div></main></main><footer class="footer flex"><section class=container><nav class=footer-links><a href=/articles/index.xml>RSS</a></nav></section><script async src=/js/features.min.a94f58a30ad2560de728e080d87f75c60cf806fd1b3d5f4815f1a1a02c0d1859.js></script></footer></body></html>

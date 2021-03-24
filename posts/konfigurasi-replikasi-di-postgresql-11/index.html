@@ -1,0 +1,128 @@
+<!doctype html><html lang=en-us><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta http-equiv=x-ua-compatible content="IE=edge"><meta name=theme-color content="dark"><title>Konfigurasi Replikasi di PostgreSQL 11 | relax, you're probably doing fine</title><link rel=stylesheet href=/sass/main.min.4e90cee935c47394b47f9cb7ffe8e3ffab18b88d82fea203918cc3f92eec5eb2.css></head><body class=dark><nav class=navbar><div class=container><div class=flex><div><a class=brand href=/>relax, you're probably doing fine</a></div><div class=flex><a href=/articles/>Articles</a>
+<a href=/tags/>Tags</a>
+<button id=dark-mode-button></button></div></div></div></nav><main><div class=container><article><header class=article-header><div class=thumb><div><h1>Konfigurasi Replikasi di PostgreSQL 11</h1><div class=post-meta><div>By on <time>October 21, 2018</time></div><div class=tags><a href=/tags/postgresql/>postgresql</a></div></div></div></div></header></article><div class=article-post><p>Yay PostgreSQL 11 baru saja keluar bulan lalu (lihat <a href="https://news.ycombinator.com/item?id=18248050">di sini</a> untuk diskusi HN). Yuk kita coba mengkonfigurasi replikasi di PostgreSQL 11.</p><h1 id=replikasi-di-postgresql>Replikasi di PostgreSQL</h1><p>Replikasi di PostgreSQL didasarkan pada teknologi Write Ahead Log (WAL). Fungsi WAL sangat simpel. Seperti namanya, WAL menjadikan PostgreSQL untuk menulis log sebelum setiap perubahan yang terjadi. Perubahan data tidak akan dilakukan sebelum WAL berhasil disimpan ke storage. Log ini berisi perubahan yang dilakukan kepada PostgreSQL. Dengan demikian integritas data di PostgreSQL dapat terjamin. Apabila server crash sebelum perubahan data dilakukan, PostgreSQL dapat membaca WAL terakhir dan menjalankannya lagi. Selain itu, apabila kita memiliki WAL yang lengkap, kita dapat menjalankan ulang seluruh WAL dari awal sampai akhir untuk mendapatkan state terakhir. Sehingga WAL juga dapat digunakan untuk mekanisme backup juga.</p><p>Fungsi WAL tidak hanya itu saja. Bagaimana jika kita mengirim WAL dari server PostgreSQL A ke server B, dan server B langsung menjalankan WAL ketika menerimanya. Yap, server B akan memiliki state yang sama dengan server A! Inilah yang disebut sebagai <em>streaming replication</em> pada PostgreSQL.</p><p>Memang tidak ketika perubahan terjadi di server A, server B seketika itu juga memiliki state yang sama dengan server A. Terdapat delay selama beberapa saat sebelum state server B sama dengan server A. Hal ini dikarenakan diperlukan waktu untuk mengirimkan WAL dari server A ke server B, dan server B juga memerlukan waktu untuk menjalankan WAL yang diterima. Akan tetapi kita bisa menjamin bahwa suatu saat nanti, server B akan memiliki state yang sama dengan server A. Hal ini disebut sebagai <em>eventually consistent</em>.</p><p>Akan tetapi bagaimana jika terdapat WAL yang hilang di network, sehingga server B tidak akan pernah menerimanya. Jika ini terjadi maka server B tidak akan pernah bisa memiliki state yang sama dengan server A. Untuk mengatasi hal ini, PostgreSQL memiliki fitur untuk menjalankan WAL dari sumber lain. Akan tetapi WAL yang ditulis di server A harus disimpan pada storage yang dapat diakses dari server B.</p><h1 id=konfigurasi-replikasi>Konfigurasi replikasi</h1><p>Kita akan menggunakan PostgreSQL versi 11 pada server Ubuntu 18.04. Replikasi yang kita buat akan memiliki skema seperti ini:</p><p><img src=/images/2018-10/postgres-replication-diagram.png alt=diagram></p><p>Kita akan membutuhkan 4 server. Diasumsikan bahwa untuk server berikut dapat melakukan passwordless SSH ke server lain (cek <a href=https://www.digitalocean.com/community/tutorials/how-to-configure-ssh-key-based-authentication-on-a-linux-server#copying-your-public-key-manually>di sini</a> untuk bagaimana mengkonfigurasi passwordless SSH):</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>primary, slave1, slave2 -&gt; wal_storage
+</code></pre></td></tr></table></div></div><p><code>primary</code> merupakan server utama yang menjalankan perubahan data dari client. Sedangkan <code>slave1</code> dan <code>slave2</code> merupakan server yang menerima WAL dari <code>primary</code>. Sedangkan <code>wal_storage</code> merupaan server yang menyimpan WAL yang ditulis dari server <code>primary</code>, <code>slave1</code> dan <code>slave2</code>.</p><ol><li><p>Install PostgreSQL 11</p><p>Ikuti langkan <a href=https://www.postgresql.org/download/linux/ubuntu/>di sini</a> untuk menginstall PostgreSQL 11 di server <code>primary</code>, <code>slave1</code> dan <code>slave2</code>.</p></li><li><p>Membuat user replikasi</p><p>Server slave harus terhubung ke server <code>primary</code> untuk mendapatkan akses ke WAL server <code>primary</code>. Kita akan menggunakan user khusus untuk ini. Untuk membuatnya, pada server <code>primary</code>, <code>slave1</code> dan <code>slave2</code> masuk ke user <code>postgres</code> lalu jalankan perintah berikut:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>psql -c <span class=s2>&#34;create user replicator with replication login;&#34;</span>
+</code></pre></td></tr></table></div></div><p>Opsi <code>replication</code> menandakan bahwa user yang dibuat merupakan user khusus yang digunakan untuk replikasi dan opsi <code>login</code> memungkinkan user ini untuk melakukan login dari server lain.</p></li><li><p>Konfigurasi <code>pg_hba.conf</code></p><p>PostgreSQL memiliki file <code>pg_hba.conf</code> yang befungsi untuk mengatur koneksi yang diijinkan masuk. Agar replikasi dapat berjalan, maka <code>slave1</code> dan <code>slave2</code> harus dapat mengakses <code>primary</code> dengan menggunakan user <code>replicator</code>. Untuk itu tambahkan baris berikut pada <code>/etc/postgresql/11/main/pg_hba.conf</code></p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span><span class=lnt>3
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash><span class=c1># ganti NETWORK dengan CIDR yang mencakup server primary, slave1 dan slave2</span>
+<span class=c1># misal 10.11.12.0/24</span>
+host replication replicator NETWORK trust
+</code></pre></td></tr></table></div></div><p>Baris tersebut artinya <em>koneksi yang masuk lewat TCP/IP, yang berasal dari IP yang termasuk CIDR yang didefinisikasn di <code>NETWORK</code>, yang menggunakan user <code>replicator</code> untuk keperluan <code>replication</code>, akan diijinkan</em>.</p><p>Lakukan ini di server <code>primary</code>, <code>slave1</code> dan <code>slave2</code>.</p></li><li><p>Konfigurasi PostgreSQL</p><p>Buka file <code>/etc/postgresql/11/main/postgresql.conf</code> dan sesuaikan/tambahkan konfigurasi untuk:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span><span class=lnt>3
+</span><span class=lnt>4
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash><span class=nv>listen_addresses</span> <span class=o>=</span> <span class=s1>&#39;*&#39;</span>
+<span class=nv>wal_level</span> <span class=o>=</span> <span class=s1>&#39;replica&#39;</span> <span class=c1># diperlukan agar data yang ditulis di WAL dapat digunakan untuk keperluan replikasi</span>
+<span class=nv>max_wal_senders</span> <span class=o>=</span> <span class=m>3</span> <span class=c1># jumlah proses pengiriman WAL yang diijinkan, paling tidak harus sama dengan jumlah server slave</span>
+<span class=nv>wal_keep_segments</span> <span class=o>=</span> <span class=m>500</span> <span class=c1># jumlah file WAL yang disimpan</span>
+</code></pre></td></tr></table></div></div><p>Lakukan ini di server <code>primary</code>, <code>slave1</code> dan <code>slave2</code>. Lalu restart service postgres agar PostgreSQL membaca perubahan konfigurasi.</p></li><li><p>Konfigurasi penyimpanan WAL</p><p>Tambahkan baris berikut di <code>/etc/postgresql/11/main/postgresql.conf</code></p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash><span class=nv>archive_mode</span> <span class=o>=</span> <span class=s1>&#39;on&#39;</span>
+<span class=nv>archive_command</span> <span class=o>=</span> <span class=s1>&#39;rsync -az %p $USER@$IP_WAL_STORAGE:~/wals/&#39;</span>
+</code></pre></td></tr></table></div></div><p>Kita menggunakan <code>archive_command</code> untuk menyimpan file WAL yang dibuat oleh PostgreSQL di server <code>wal_storage</code>. <code>archive_command</code> akan dijalankan untuk setiap file WAL yang dibuat oleh PostgreSQL. Kita menggunakan <code>rsync</code> untuk menyimpan file WAL. Kenapa <code>rsync</code>? Karena kita memiliki 3 server PostgreSQL yang menghasilkan WAL yang sama maka kita harus mengecek apakah file WAL telah disimpan ke storage. Dengan menggunakan <code>rsync</code>, kita bisa menghilangkan proses pengecekan tersebut. Karena <code>rsync</code> tidak akan melakukan apa apa apabila file WAL telah disimpan.</p><p>Lakukan ini di server <code>primary</code>, <code>slave1</code> dan <code>slave2</code>. Lalu restart service postgres agar PostgreSQL membaca perubahan konfigurasi.</p></li><li><p>Copy state <code>primary</code> ke slave</p><p>Jalankan perintah berikut di server <code>slave1</code> dan <code>slave2</code></p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span><span class=lnt>3
+</span><span class=lnt>4
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>systemctl stop postgresql
+rm -rf /var/lib/postgresql/11/main
+pg_basebackup --pgdata<span class=o>=</span>/var/lib/postgresql/11/main --write-recovery-conf --progress --verbose --host<span class=o>=</span><span class=nv>$IP_PRIMARY</span> --username<span class=o>=</span>replicator
+chown -R postgres:postgres /var/lib/postgresql/11/main
+</code></pre></td></tr></table></div></div><p>Perintah di atas akan membuat ulang data PostgreSQL agar memiliki state yang sama dengan <code>primary</code>. Selain itu juga mengkonfigurasi <em>streaming replication</em> pada file <code>/var/lib/postgresql/11/main/recovery.conf</code> yang berisi:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash><span class=nv>standby_mode</span> <span class=o>=</span> <span class=s1>&#39;on&#39;</span>
+<span class=nv>primary_conninfo</span> <span class=o>=</span> <span class=s1>&#39;user=replicator passfile=&#39;&#39;/root/.pgpass&#39;&#39; host=IP_PRIMARY port=5432 sslmode=prefer sslcompression=0 krbsrvname=postgres target_session_attrs=any&#39;</span>
+</code></pre></td></tr></table></div></div><p>Tambahkan baris berikut pada <code>/var/lib/postgresql/11/main/recovery.conf</code>:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash><span class=nv>restore_command</span> <span class=o>=</span> <span class=s1>&#39;rsync -az $USER@$IP_WAL_STORAGE:~/wals/%f %p&#39;</span>
+</code></pre></td></tr></table></div></div><p>Dengan konfigurasi <code>recovery.conf</code> seperti di atas, server akan terus menjalankan WAL yang didapat dari server <code>primary</code>. Selain itu, apabila file WAL tidak didapatkan dari <em>streaming replication</em>, server akan menjalankan perintah yang terdapat pada <code>restore_command</code> untuk mendapatkan file WAL tersebut.</p><p>Selanjutnya jalankan service postgres pada server <code>slave1</code> dan <code>slave2</code>. Jika konfigurasi benar, akan muncul proses <code>postgres: 11/main: walsender</code> pada server <code>primary</code> untuk setiap slave yang terhubung.</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash><span class=m>17659</span> ?        Ss     0:00 postgres: 11/main: walsender replicator IP_SLAVE_1<span class=o>(</span>51648<span class=o>)</span> streaming 0/7000060
+<span class=m>17660</span> ?        Ss     0:00 postgres: 11/main: walsender replicator IP_SLAVE_2<span class=o>(</span>60446<span class=o>)</span> streaming 0/7000060
+</code></pre></td></tr></table></div></div></li></ol><h1 id=tes-replikasi>Tes replikasi</h1><p>Semua perubahan yang terjadi pada server <code>primary</code> akan diikuti oleh server slave juga. Untuk mencobanya dapat dilakukan dengan membuat database / tabel pada server <code>primary</code>. Setelah beberapa saat, database / tabel tersebut juga akan muncul pada server slave.</p><p>Selain itu, status replikasi dapat juga dilakukan dengan melakukan query berikut di server <code>primary</code></p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt> 1
+</span><span class=lnt> 2
+</span><span class=lnt> 3
+</span><span class=lnt> 4
+</span><span class=lnt> 5
+</span><span class=lnt> 6
+</span><span class=lnt> 7
+</span><span class=lnt> 8
+</span><span class=lnt> 9
+</span><span class=lnt>10
+</span><span class=lnt>11
+</span><span class=lnt>12
+</span><span class=lnt>13
+</span><span class=lnt>14
+</span><span class=lnt>15
+</span><span class=lnt>16
+</span><span class=lnt>17
+</span><span class=lnt>18
+</span><span class=lnt>19
+</span><span class=lnt>20
+</span><span class=lnt>21
+</span><span class=lnt>22
+</span><span class=lnt>23
+</span><span class=lnt>24
+</span><span class=lnt>25
+</span><span class=lnt>26
+</span><span class=lnt>27
+</span><span class=lnt>28
+</span><span class=lnt>29
+</span><span class=lnt>30
+</span><span class=lnt>31
+</span><span class=lnt>32
+</span><span class=lnt>33
+</span><span class=lnt>34
+</span><span class=lnt>35
+</span><span class=lnt>36
+</span><span class=lnt>37
+</span><span class=lnt>38
+</span><span class=lnt>39
+</span><span class=lnt>40
+</span><span class=lnt>41
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash><span class=nv>postgres</span><span class=o>=</span><span class=c1># select * from pg_stat_replication;</span>
+-<span class=o>[</span> RECORD <span class=m>1</span> <span class=o>]</span>----+------------------------------
+pid              <span class=p>|</span> <span class=m>17659</span>
+usesysid         <span class=p>|</span> <span class=m>16384</span>
+usename          <span class=p>|</span> replicator
+application_name <span class=p>|</span> walreceiver
+client_addr      <span class=p>|</span> IP_SLAVE_1
+client_hostname  <span class=p>|</span>
+client_port      <span class=p>|</span> <span class=m>51648</span>
+backend_start    <span class=p>|</span> 2018-11-15 16:48:02.177309+00
+backend_xmin     <span class=p>|</span>
+state            <span class=p>|</span> streaming
+sent_lsn         <span class=p>|</span> 0/7000140
+write_lsn        <span class=p>|</span> 0/7000140
+flush_lsn        <span class=p>|</span> 0/7000140
+replay_lsn       <span class=p>|</span> 0/7000140
+write_lag        <span class=p>|</span>
+flush_lag        <span class=p>|</span>
+replay_lag       <span class=p>|</span>
+sync_priority    <span class=p>|</span> <span class=m>0</span>
+sync_state       <span class=p>|</span> async
+-<span class=o>[</span> RECORD <span class=m>2</span> <span class=o>]</span>----+------------------------------
+pid              <span class=p>|</span> <span class=m>17660</span>
+usesysid         <span class=p>|</span> <span class=m>16384</span>
+usename          <span class=p>|</span> replicator
+application_name <span class=p>|</span> walreceiver
+client_addr      <span class=p>|</span> IP_SLAVE_2
+client_hostname  <span class=p>|</span>
+client_port      <span class=p>|</span> <span class=m>60446</span>
+backend_start    <span class=p>|</span> 2018-11-15 16:48:05.640884+00
+backend_xmin     <span class=p>|</span>
+state            <span class=p>|</span> streaming
+sent_lsn         <span class=p>|</span> 0/7000140
+write_lsn        <span class=p>|</span> 0/7000140
+flush_lsn        <span class=p>|</span> 0/7000140
+replay_lsn       <span class=p>|</span> 0/7000140
+write_lag        <span class=p>|</span>
+flush_lag        <span class=p>|</span>
+replay_lag       <span class=p>|</span>
+sync_priority    <span class=p>|</span> <span class=m>0</span>
+sync_state       <span class=p>|</span> async
+</code></pre></td></tr></table></div></div><hr><p>Demikianlah fitur replikasi bawaan PostgreSQL. Apabila diperhatikan, replikasi hanya berjalan satu arah. Perubahan dari server <code>primary</code> akan direplikasi ke server slave, akan tetapi tidak sebaliknya. Oleh karena itu semua query yang melakukan perubahan ke database harus diarahkan ke server <code>primary</code> dan kapasitas perubahan database dibatasi oleh spesifikasi server <code>primary</code>. Akan tetapi, query yang membaca data dari database dapat ditujukan ke salah satu server slave. Apabila kebutuhan kapasitas perubahan database sangat besar dan sebuah server <code>primary</code> tidak dapat mengatasinya, maka skenario ini tidak dapat digunakan. Terdapat beberapa project lain yang memungkinkan menggunakan skenario multi-master pada PostgreSQL, misalnya <a href=https://www.cockroachlabs.com>Cockroachdb</a> dan <a href=https://www.citusdata.com/>Citus</a>.</p></div></div><div class=container><nav class="flex container suggested"><a rel=prev href=/posts/running-ethereum-private-network/ title="Previous post (older)"><span>Previous</span>
+Running Ethereum Private Network</a>
+<a rel=next href=/posts/no-for-each-item-in-array-in-terraform/ title="Next post (newer)"><span>Next</span>
+No `for_each` Item in Array in Terraform</a></nav></div></main></main><footer class="footer flex"><section class=container><nav class=footer-links><a href=/articles/index.xml>RSS</a></nav></section><script async src=/js/features.min.a94f58a30ad2560de728e080d87f75c60cf806fd1b3d5f4815f1a1a02c0d1859.js></script></footer></body></html>

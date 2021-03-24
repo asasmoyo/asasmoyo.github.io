@@ -1,0 +1,141 @@
+<!doctype html><html lang=en-us><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta http-equiv=x-ua-compatible content="IE=edge"><meta name=theme-color content="dark"><title>Running Ethereum Private Network | relax, you're probably doing fine</title><link rel=stylesheet href=/sass/main.min.4e90cee935c47394b47f9cb7ffe8e3ffab18b88d82fea203918cc3f92eec5eb2.css></head><body class=dark><nav class=navbar><div class=container><div class=flex><div><a class=brand href=/>relax, you're probably doing fine</a></div><div class=flex><a href=/articles/>Articles</a>
+<a href=/tags/>Tags</a>
+<button id=dark-mode-button></button></div></div></div></nav><main><div class=container><article><header class=article-header><div class=thumb><div><h1>Running Ethereum Private Network</h1><div class=post-meta><div>By on <time>October 31, 2017</time></div><div class=tags><a href=/tags/ethereum/>ethereum</a></div></div></div></div></header></article><div class=article-post><p>One good way to understand Ethereum is by creating your own Ethereum private network. I have been trying to understand Ethereum in the past few weeks and I learned a lot of things just by creating it. I&rsquo;ll now write down what I got from creating Ethereum private network. And I&rsquo;ll update this post as I learn new things&mldr; hopefully</p><p>First of all, Ethereum client works by connecting to a network specified by its <code>networkid</code>. The normal network where people usually connecting to is public network with <code>networkid=1</code> (you can see it <a href=https://github.com/ethereum/go-ethereum/blob/b0ca1b67ce6e297fe02281d01a486225bbf385f8/eth/config.go#L42>here</a>). But it is not the only network you can connect to, you can also create your own Ethereum network.</p><p>Typical Ethereum network consists of:</p><ol><li><p>Bootnode</p><p>You might be wondering how an Ethereum node can connect to other nodes and broadcast messages. It turns out they have special nodes called bootnode. Basically, they works as node discovery where you can join and ask for other nodes addresses that you can connect to.</p><p>You can see the default bootnodes value <a href=https://github.com/ethereum/go-ethereum/blob/b0ca1b67ce6e297fe02281d01a486225bbf385f8/params/bootnodes.go#L21>here</a>.</p></li><li><p>Normal node</p><p>They are just normal node people usually run.</p></li><li><p>Miner</p><p>They are strong miners who make money out of thin air.</p></li></ol><p>Actually you can run a node as normal node and miner at the same time. But in this post I&rsquo;m going to run them separately so we can understand better what they are doing.</p><h2 id=requirements>Requirements</h2><p>I&rsquo;ll use Golang version of Ethereum clients. I haven&rsquo;t tried other client implementations but they should also work, maybe&mldr;</p><p>You can download pre-built binary here: <a href=https://geth.ethereum.org/downloads/>https://geth.ethereum.org/downloads/</a>, please download the latest one with name: <code>Geth & Tools</code>. Unlike <code>Geth</code>, it contains <code>geth</code> and <code>bootnode</code> binaries needed for this post.</p><p>Please download and add the binaries to your <code>PATH</code>, in this post I assume all of those binary are already included in <code>PATH</code>.</p><h2 id=create-accounts>Create accounts</h2><p>Ethereum doesn&rsquo;t need you to register in order to join the network. What you need to do is just create an account which consists of a private key and a public key, with a password for security, then you can just use the address. If you use <code>geth</code> to generate an account, both private and public key will be hidden in a weird looking <code>json</code> file.</p><p>Creating account in Ethereum is simple, let&rsquo;s use <code>geth</code> to create one:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>geth --datadir<span class=o>=</span>accounts account new
+</code></pre></td></tr></table></div></div><p>You will then asked to type password. The created account information will be saved in <code>accounts/keystore/UTC--{year}-{month}--{account}</code>.</p><blockquote><p>Make sure to <strong>SAVE THE PASSWORD SECURELY</strong>, because there is no way to retrieve your password once you lost it</p></blockquote><p>Example account:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt> 1
+</span><span class=lnt> 2
+</span><span class=lnt> 3
+</span><span class=lnt> 4
+</span><span class=lnt> 5
+</span><span class=lnt> 6
+</span><span class=lnt> 7
+</span><span class=lnt> 8
+</span><span class=lnt> 9
+</span><span class=lnt>10
+</span><span class=lnt>11
+</span><span class=lnt>12
+</span><span class=lnt>13
+</span><span class=lnt>14
+</span><span class=lnt>15
+</span><span class=lnt>16
+</span><span class=lnt>17
+</span><span class=lnt>18
+</span><span class=lnt>19
+</span><span class=lnt>20
+</span><span class=lnt>21
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-json data-lang=json><span class=p>{</span>
+    <span class=nt>&#34;address&#34;</span><span class=p>:</span> <span class=s2>&#34;07eafaabd1e6dce571f1931092fc1586b55f896e&#34;</span><span class=p>,</span>
+    <span class=nt>&#34;crypto&#34;</span><span class=p>:</span> <span class=p>{</span>
+        <span class=nt>&#34;cipher&#34;</span><span class=p>:</span> <span class=s2>&#34;aes-128-ctr&#34;</span><span class=p>,</span>
+        <span class=nt>&#34;ciphertext&#34;</span><span class=p>:</span> <span class=s2>&#34;b5f65c754374915d7c02a156d7d4328dcb612a4ac6287fee5dd90dd6a074b808&#34;</span><span class=p>,</span>
+        <span class=nt>&#34;cipherparams&#34;</span><span class=p>:</span> <span class=p>{</span>
+            <span class=nt>&#34;iv&#34;</span><span class=p>:</span> <span class=s2>&#34;0ae623176cdfda61136f576244cd91df&#34;</span>
+        <span class=p>},</span>
+        <span class=nt>&#34;kdf&#34;</span><span class=p>:</span> <span class=s2>&#34;scrypt&#34;</span><span class=p>,</span>
+        <span class=nt>&#34;kdfparams&#34;</span><span class=p>:</span> <span class=p>{</span>
+            <span class=nt>&#34;dklen&#34;</span><span class=p>:</span> <span class=mi>32</span><span class=p>,</span>
+            <span class=nt>&#34;n&#34;</span><span class=p>:</span> <span class=mi>262144</span><span class=p>,</span>
+            <span class=nt>&#34;p&#34;</span><span class=p>:</span> <span class=mi>1</span><span class=p>,</span>
+            <span class=nt>&#34;r&#34;</span><span class=p>:</span> <span class=mi>8</span><span class=p>,</span>
+            <span class=nt>&#34;salt&#34;</span><span class=p>:</span> <span class=s2>&#34;ca4847545a4a0fa9a75dd2c98c83ddd9cce18578b8b8153d0c81ef49195fb690&#34;</span>
+        <span class=p>},</span>
+        <span class=nt>&#34;mac&#34;</span><span class=p>:</span> <span class=s2>&#34;398c2fe085315d8b497d09d88866e35f6b2d038023c86f4c346ff86dbd841d17&#34;</span>
+    <span class=p>},</span>
+    <span class=nt>&#34;id&#34;</span><span class=p>:</span> <span class=s2>&#34;b0272829-d924-48d4-97fb-1ec3329f3d80&#34;</span><span class=p>,</span>
+    <span class=nt>&#34;version&#34;</span><span class=p>:</span> <span class=mi>3</span>
+<span class=p>}</span>
+</code></pre></td></tr></table></div></div><p>The important part is <code>address</code>, as its name implies it is the address of the account. To understand better what&rsquo;s stored in there you can read <a href=https://ethereum.stackexchange.com/a/15606>this</a>.</p><h2 id=create-genesis-block>Create genesis block</h2><p>If you are not familiar with blockchain, basically blockchain consists of many blocks and each block has the hash of previous block in it. But wait, what about the very first block in the blockchain? Which block should it refers to?</p><p>The first block in a blockchain is a special block, called genesis block. Unlike other blocks, it doesn&rsquo;t need the hash of the previous block (well, there is no block before it). It sets the hash of the previous block with <code>0</code>. It also can give some balance to some addresses.</p><blockquote><p>You can see Ethereum genesis block here: <a href=https://etherscan.io/block/0>https://etherscan.io/block/0</a>. Notice it has <code>Parent Hash=0</code>.</p></blockquote><p>Genesis block in Ethereum is just an <code>json</code> file:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt> 1
+</span><span class=lnt> 2
+</span><span class=lnt> 3
+</span><span class=lnt> 4
+</span><span class=lnt> 5
+</span><span class=lnt> 6
+</span><span class=lnt> 7
+</span><span class=lnt> 8
+</span><span class=lnt> 9
+</span><span class=lnt>10
+</span><span class=lnt>11
+</span><span class=lnt>12
+</span><span class=lnt>13
+</span><span class=lnt>14
+</span><span class=lnt>15
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-json data-lang=json><span class=p>{</span>
+    <span class=nt>&#34;config&#34;</span><span class=p>:</span> <span class=p>{</span>
+        <span class=nt>&#34;chainId&#34;</span><span class=p>:</span> <span class=mi>9999</span><span class=p>,</span>
+        <span class=nt>&#34;homesteadBlock&#34;</span><span class=p>:</span> <span class=mi>0</span><span class=p>,</span>
+        <span class=nt>&#34;eip155Block&#34;</span><span class=p>:</span> <span class=mi>0</span><span class=p>,</span>
+        <span class=nt>&#34;eip158Block&#34;</span><span class=p>:</span> <span class=mi>0</span>
+    <span class=p>},</span>
+    <span class=nt>&#34;alloc&#34;</span><span class=p>:</span> <span class=p>{</span>
+        <span class=nt>&#34;07eafaabd1e6dce571f1931092fc1586b55f896e&#34;</span><span class=p>:</span> <span class=p>{</span>
+            <span class=nt>&#34;balance&#34;</span><span class=p>:</span> <span class=s2>&#34;100&#34;</span>
+        <span class=p>}</span>
+    <span class=p>},</span>
+    <span class=nt>&#34;difficulty&#34;</span><span class=p>:</span> <span class=s2>&#34;100000&#34;</span><span class=p>,</span>
+    <span class=nt>&#34;gasLimit&#34;</span><span class=p>:</span> <span class=s2>&#34;999999&#34;</span>
+<span class=p>}</span>
+</code></pre></td></tr></table></div></div><p>Short explanation about above genesis file:</p><ol><li><p><code>config.chainId</code> I am not really sure about this. But it is used for preventing replay attack accross Ethereum networks. I also see most private network examples set this to the <code>networkid</code> of the private network. We will use 9999 as our <code>networkid</code> in this post.</p></li><li><p><code>config.homesteadBlock</code>, <code>eip155Block</code> and <code>eip158Block</code> do not really matter in a private network</p></li><li><p><code>alloc</code> specifies initial balance for some addresses</p></li><li><p><code>difficulty</code> specifies how difficult mining should be</p></li></ol><p>Create file <code>genesis.json</code> containing above json snippet (please change the address in the <code>alloc</code> to be your own account address). We&rsquo;ll back to this later when we are creating nodes.</p><h2 id=setup-bootnode>Setup bootnode</h2><p>As I said before, bootnode works as a node discovery. Nodes would need bootnode to join and discover other nodes in the network so they can do whatever they want, e.g: syncing blockchain, create transaction, mining etc.</p><p>Setting up a bootnode is easy. First you need to create a nodekey. Essentially nodekey is an address where the bootnode run.</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>bootnode --genkey<span class=o>=</span>boot.key
+</code></pre></td></tr></table></div></div><blockquote><p>You should save your bootnode&rsquo;s nodekey. If the value is changed, you will have to update your other nodes to point to the new bootnode&rsquo;s address.</p></blockquote><blockquote><p>Technically, nodekey is not the real address of the bootnode. Nodekey is just a public key and it needs to be hashed first to get the real address. See <a href=https://ethereum.stackexchange.com/questions/3542/how-are-ethereum-addresses-generated>this</a> for further explanation.</p></blockquote><p>It will create a nodekey and save it to <code>boot.key</code>.</p><p>You will also need the real address of bootnode so other nodes can use it as their bootnode. You can get it by:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>bootnode --nodekey<span class=o>=</span>boot.key --writeaddress
+</code></pre></td></tr></table></div></div><h2 id=setup-nodes>Setup nodes</h2><p>Now we need to setup Ethereum nodes. Since we are going to use our own private network we will need to initialize our nodes with our genesis block.</p><blockquote><p>You have to do this for all nodes in our private network</p></blockquote><p>You can initalize a node by:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>geth --datadir<span class=o>=</span>nodeX init genesis.json
+</code></pre></td></tr></table></div></div><p>Please replace <code>nodeX</code> with a path where the node will save its data. Let&rsquo;s create a node and a miner, so run the above command with <code>--datadir=node</code> and <code>--datadir=miner</code>. It will initialize the nodes using our own genesis block definition in <code>genesis.json</code>.</p><blockquote><p>We don&rsquo;t need to specify genesis block when initalizing nodes in main network. Because genesis block for the main network is already hard coded in <code>geth</code>, see <a href=https://github.com/ethereum/go-ethereum/blob/6d6a5a93370371a33fb815d7ae47b60c7021c86a/core/genesis.go#L310>here</a>.</p></blockquote><blockquote><p>We need to initialize all of our nodes with our genesis block because if they use the default genesis block they will not be able to sync to our private network&rsquo;s blocks.</p></blockquote><h2 id=running-all-together>Running all together</h2><p>Let&rsquo;s put everything together. First we run the bootnode:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>bootnode --nodekey<span class=o>=</span>boot.key --verbosity<span class=o>=</span><span class=m>9</span>
+</code></pre></td></tr></table></div></div><p>I added <code>--verbosity=9</code> so we can easily see if the bootnode is working and other nodes are able to connect to bootnode. If it runs ok it should output something like:</p><pre><code>INFO [10-31|21:26:21] UDP listener up                          self=enode://157e68e800266d39015a125f3c20a499cd190940e2a665854e0fb80f62f7c00734acc6eb277c06f0b5cb5840436b0ab3980761e7c58a27bfa052c10560db2bc7@[::]:30301
+</code></pre><p><code>enode://...</code> is the bootnode&rsquo;s address and <code>@[::]:30301</code> means that it runs on all interfaces at port 30301.</p><p>Next we run the node. We can run it by:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span><span class=lnt>3
+</span><span class=lnt>4
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>geth --networkid<span class=o>=</span><span class=m>9999</span> <span class=se>\
+</span><span class=se></span>    --port<span class=o>=</span><span class=m>9001</span> <span class=se>\
+</span><span class=se></span>    --bootnodes<span class=o>=</span>enode://157e68e800266d39015a125f3c20a499cd190940e2a665854e0fb80f62f7c00734acc6eb277c06f0b5cb5840436b0ab3980761e7c58a27bfa052c10560db2bc7@127.0.0.1:30301 <span class=se>\
+</span><span class=se></span>    --datadir<span class=o>=</span>node
+</code></pre></td></tr></table></div></div><p>Please make sure to adjust the bootnode address from bootnode&rsquo;s logs. I added <code>--port=9001</code> so that we can run multiple nodes in a host, they will run on different ports. If it runs ok the bootnode will output something like:</p><pre><code>TRACE[10-31|21:40:08] &gt;&gt; PONG/v4                               addr=127.0.0.1:9001 err=nil
+TRACE[10-31|21:40:08] &lt;&lt; PING/v4                               addr=127.0.0.1:9001 err=nil
+TRACE[10-31|21:40:08] Starting bonding ping/pong               id=4b2c152d338bdff6 known=false failcount=0 age=419294h40m8.013456s
+TRACE[10-31|21:40:08] &gt;&gt; PING/v4                               addr=127.0.0.1:9001 err=nil
+TRACE[10-31|21:40:08] &lt;&lt; PONG/v4                               addr=127.0.0.1:9001 err=nil
+TRACE[10-31|21:40:08] &gt;&gt; NEIGHBORS/v4                          addr=127.0.0.1:9001 err=nil
+TRACE[10-31|21:40:08] &lt;&lt; FINDNODE/v4                           addr=127.0.0.1:9001 err=nil
+</code></pre><p>Last, let&rsquo;s run the miner node:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span><span class=lnt>3
+</span><span class=lnt>4
+</span><span class=lnt>5
+</span><span class=lnt>6
+</span><span class=lnt>7
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>geth --networkid<span class=o>=</span><span class=m>9999</span> <span class=se>\
+</span><span class=se></span>    --port<span class=o>=</span><span class=m>9002</span> <span class=se>\
+</span><span class=se></span>    --bootnodes<span class=o>=</span>enode://157e68e800266d39015a125f3c20a499cd190940e2a665854e0fb80f62f7c00734acc6eb277c06f0b5cb5840436b0ab3980761e7c58a27bfa052c10560db2bc7@127.0.0.1:30301 <span class=se>\
+</span><span class=se></span>    --datadir<span class=o>=</span>miner <span class=se>\
+</span><span class=se></span>    --mine <span class=se>\
+</span><span class=se></span>    --minerthreads<span class=o>=</span><span class=m>1</span> <span class=se>\
+</span><span class=se></span>    --etherbase<span class=o>=</span>07eafaabd1e6dce571f1931092fc1586b55f896e
+</code></pre></td></tr></table></div></div><p><code>--miner</code> makes the node to start mining after it is ready, <code>--minerthreads</code> sets how many threads will be used for mining and <code>--etherbase</code> will store the reward of mining to the specified address. If it runs ok it should have output like:</p><pre><code>INFO [10-31|21:48:48] Starting mining operation
+INFO [10-31|21:48:48] Commit new mining work                   number=1 txs=0 uncles=0 elapsed=164.218µs
+INFO [10-31|21:48:49] Successfully sealed new block            number=1 hash=d13118…8fadfb
+INFO [10-31|21:48:49] 🔨 mined potential block                  number=1 hash=d13118…8fadfb
+INFO [10-31|21:48:49] Commit new mining work                   number=2 txs=0 uncles=0 elapsed=115.035µs
+INFO [10-31|21:48:57] Successfully sealed new block            number=2 hash=8c7c30…f6871b
+INFO [10-31|21:48:57] 🔨 mined potential block                  number=2 hash=8c7c30…f6871b
+INFO [10-31|21:48:57] Commit new mining work                   number=3 txs=0 uncles=0 elapsed=194.539µs
+INFO [10-31|21:48:59] Successfully sealed new block            number=3 hash=f688ba…303090
+</code></pre><p>Notice the node&rsquo;s logs, you should see something like this whenever the miner successfully mine a new block:</p><pre><code>INFO [10-31|21:46:45] Imported new chain segment               blocks=2 txs=0 mgas=0.000 elapsed=1.234ms   mgasps=0.000 number=2 hash=c9b5ea…2c638c
+INFO [10-31|21:46:45] Fast sync complete, auto disabling
+INFO [10-31|21:46:48] Imported new chain segment               blocks=1 txs=0 mgas=0.000 elapsed=4.415ms      mgasps=0.000 number=3 hash=b53689…b40d46
+INFO [10-31|21:47:14] Imported new chain segment               blocks=1 txs=0 mgas=0.000 elapsed=3.285ms      mgasps=0.000 number=4 hash=e69fd2…5cabe7
+</code></pre><p>It shows us that the node just updated its blockchain. Remember, miner can find other nodes via bootnode. So whenever miner successfully mine a new block, it can ask some nodes addresses from bootnode then broadcast the new block to them.</p><p>Great! Our private network is now working well. We can see our current balance using console:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>geth attach node/geth.ipc
+</code></pre></td></tr></table></div></div><p>Now we can check balance of the address used for mining:</p><div class=highlight><div class=chroma><table class=lntable><tr><td class=lntd><pre class=chroma><code><span class=lnt>1
+</span><span class=lnt>2
+</span><span class=lnt>3
+</span><span class=lnt>4
+</span></code></pre></td><td class=lntd><pre class=chroma><code class=language-bash data-lang=bash>&gt; eth.getBalance<span class=o>(</span><span class=s1>&#39;07eafaabd1e6dce571f1931092fc1586b55f896e&#39;</span><span class=o>)</span>
+<span class=m>245000000000000000100</span> <span class=c1># this one is in &#39;wei&#39; unit, see http://ethdocs.org/en/latest/ether.html#denominations. Of couse we can convert it to &#39;ether&#39; unit</span>
+&gt; web3.fromWei<span class=o>(</span>eth.getBalance<span class=o>(</span><span class=s2>&#34;07eafaabd1e6dce571f1931092fc1586b55f896e&#34;</span><span class=o>)</span>, <span class=s1>&#39;ether&#39;</span><span class=o>)</span>
+290.0000000000000001 <span class=c1># ez money=ez life :p</span>
+</code></pre></td></tr></table></div></div><blockquote><p>Check this to learn about what you can do in the console: <a href=https://github.com/ethereum/wiki/wiki/JavaScript-API>https://github.com/ethereum/wiki/wiki/JavaScript-API</a></p></blockquote><p>Okay that&rsquo;s all for this post. I hope now you understand, at least, how to setup your own Ethereum private network. I&rsquo;ll cover more topics later about creating more secure private network and transfering ether&mldr; probably</p></div></div><div class=container><nav class="flex container suggested"><a rel=prev href=/posts/setup-postgresql/ title="Previous post (older)"><span>Previous</span>
+Setup PostgreSQL on Ubuntu 16.04</a>
+<a rel=next href=/posts/konfigurasi-replikasi-di-postgresql-11/ title="Next post (newer)"><span>Next</span>
+Konfigurasi Replikasi di PostgreSQL 11</a></nav></div></main></main><footer class="footer flex"><section class=container><nav class=footer-links><a href=/articles/index.xml>RSS</a></nav></section><script async src=/js/features.min.a94f58a30ad2560de728e080d87f75c60cf806fd1b3d5f4815f1a1a02c0d1859.js></script></footer></body></html>
